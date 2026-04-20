@@ -29,6 +29,7 @@ sqlite3* db;
 const int PUERTO = 8080;
 
 // Base de datos
+
 void inicializar_db() {
     int rc = sqlite3_open("data/pui.db", &db);
     if (rc != SQLITE_OK) {
@@ -56,8 +57,50 @@ void inicializar_db() {
         );
     )";
 
+    const char* sql_padron = R"(
+        CREATE TABLE IF NOT EXISTS padron (
+            curp TEXT PRIMARY KEY,
+            nombre TEXT,
+            primer_apellido TEXT,
+            segundo_apellido TEXT,
+            fecha_nacimiento TEXT,
+            lugar_nacimiento TEXT,
+            sexo TEXT,
+            telefono TEXT,
+            fecha_registro TEXT
+        );
+    )";
+
     sqlite3_exec(db, sql_reportes, nullptr, nullptr, nullptr);
     sqlite3_exec(db, sql_coincidencias, nullptr, nullptr, nullptr);
+    sqlite3_exec(db, sql_padron, nullptr, nullptr, nullptr);
+
+    const char* sql_count = "SELECT COUNT(*) FROM padron;";
+    sqlite3_stmt* stmt;
+    int count = 0;
+    if (sqlite3_prepare_v2(db, sql_count, -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+            count = sqlite3_column_int(stmt, 0);
+        sqlite3_finalize(stmt);
+    }
+
+    if (count == 0) {
+        const char* sql_seed = R"(
+            INSERT INTO padron VALUES
+            ('XEXX010101HNEXXXA0','Juan','Pérez','López','1990-05-15','CDMX','H','5512345678','2020-01-10'),
+            ('XEXX010101MNEXXXA0','María','García','Martínez','1985-03-22','JALISCO','M','5598765432','2019-06-15'),
+            ('XEXX010101HNEXXXB0','Carlos','López','Hernández','1992-11-08','NUEVO LEON','H','5534567890','2021-03-20'),
+            ('XEXX010101MNEXXXB0','Ana','Martínez','González','1988-07-30','CDMX','M','5567891234','2018-09-05'),
+            ('XEXX010101HNEXXXC0','Luis','Hernández','Ramírez','1995-02-14','VERACRUZ','H','5523456789','2022-11-30'),
+            ('XEXX010101MNEXXXC0','Laura','González','Díaz','1991-09-25','PUEBLA','M','5545678901','2020-07-18'),
+            ('XEXX010101HNEXXXD0','Miguel','Ramírez','Torres','1987-04-03','JALISCO','H','5578901234','2017-04-22'),
+            ('XEXX010101MNEXXXD0','Sofia','Torres','Flores','1993-12-19','CDMX','M','5512398765','2023-02-14'),
+            ('XEXX010101HNEXXXE0','Jorge','Díaz','Morales','1989-08-11','NUEVO LEON','H','5556789012','2019-08-30'),
+            ('XEXX010101MNEXXXE0','Elena','Flores','Jiménez','1996-06-27','VERACRUZ','M','5589012345','2021-05-09');
+        )";
+        sqlite3_exec(db, sql_seed, nullptr, nullptr, nullptr);
+        std::cout << "[DB] Padrón de prueba insertado con 10 registros" << std::endl;
+    }
 
     std::lock_guard<std::mutex> lock(mtx_log);
     std::cout << "[DB] Base de datos inicializada correctamente" << std::endl;
@@ -107,13 +150,35 @@ std::string listar_reportes_db() {
 }
 
 // Lógica de búsqueda
+
 void fase1(Reporte& reporte) {
-   {
-	 std::lock_guard<std::mutex> lock(mtx_log);
-	 std::cout << "[FASE 1] Buscando datos básicos de " << reporte.curp << std::endl;
-   }
-	 guardar_coincidencia_db(reporte.id, 1, "Datos básicos encontrados para CURP " + reporte.curp);
+    {
+        std::lock_guard<std::mutex> lock(mtx_log);
+        std::cout << "[FASE 1] Buscando datos básicos de " << reporte.curp << std::endl;
+    }
+
+    std::string sql = "SELECT nombre, primer_apellido, fecha_nacimiento, telefono FROM padron WHERE curp='" + reporte.curp + "';";
+    sqlite3_stmt* stmt;
+    bool encontrado = false;
+
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            std::string nombre   = (char*)sqlite3_column_text(stmt, 0);
+            std::string apellido = (char*)sqlite3_column_text(stmt, 1);
+            std::string fecha    = (char*)sqlite3_column_text(stmt, 2);
+            std::string tel      = (char*)sqlite3_column_text(stmt, 3);
+            guardar_coincidencia_db(reporte.id, 1,
+                "Registro encontrado: " + nombre + " " + apellido +
+                " nacido " + fecha + " tel " + tel);
+            encontrado = true;
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    if (!encontrado)
+        guardar_coincidencia_db(reporte.id, 1, "Sin registros en padrón para CURP " + reporte.curp);
 }
+
 
 void fase2(Reporte& reporte) {
     {

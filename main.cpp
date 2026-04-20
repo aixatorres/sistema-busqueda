@@ -108,9 +108,11 @@ std::string listar_reportes_db() {
 
 // Lógica de búsqueda
 void fase1(Reporte& reporte) {
-    std::lock_guard<std::mutex> lock(mtx_log);
-    std::cout << "[FASE 1] Buscando datos básicos de " << reporte.curp << std::endl;
-    guardar_coincidencia_db(reporte.id, 1, "Datos básicos encontrados para CURP " + reporte.curp);
+   {
+	 std::lock_guard<std::mutex> lock(mtx_log);
+	 std::cout << "[FASE 1] Buscando datos básicos de " << reporte.curp << std::endl;
+   }
+	 guardar_coincidencia_db(reporte.id, 1, "Datos básicos encontrados para CURP " + reporte.curp);
 }
 
 void fase2(Reporte& reporte) {
